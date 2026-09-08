@@ -275,10 +275,110 @@ uv run dbt run
 
 ## 🎯 Next Steps
 
-1. **Load Data**: Run Iceberg OPTIMIZE jobs
-2. **Configure Alerts**: Set up monitoring
-3. **Scale**: Add more workers to Trino
-4. **Production**: Deploy with TLS and IAM
+### 1. **Load Data with Iceberg OPTIMIZE**
+
+Once data is written to MinIO, optimize the Iceberg tables for query performance:
+
+```bash
+# Connect to Trino
+docker exec -it trino trino --catalog iceberg
+
+-- Run OPTIMIZE on each table
+ALTER TABLE iceberg.curated.evse_electrical EXECUTE OPTIMIZE;
+ALTER TABLE iceberg.curated.evse_state EXECUTE OPTIMIZE;
+ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE;
+ALTER TABLE iceberg.curated.humidity EXECUTE OPTIMIZE;
+ALTER TABLE iceberg.curated.vibration EXECUTE OPTIMIZE;
+```
+
+This compacts small files and updates table statistics for better query planning.
+
+### 2. **Configure Alerts and Monitoring**
+
+Set up monitoring for your lakehouse infrastructure:
+
+```yaml
+# Example Prometheus configuration (add to docker-compose)
+prometheus:
+  image: prom/prometheus:latest
+  ports:
+    - "9090:9090"
+  volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml
+  depends_on:
+    - minio
+    - trino
+```
+
+```bash
+# Add to docker-compose.phase3.yml services section
+# Then create prometheus.yml with MinIO/Trino metrics endpoints
+```
+
+Set up alerts for:
+- MinIO disk usage (>80%)
+- Trino query failures
+- Hive Metastore connection issues
+
+### 3. **Scale Trino Cluster**
+
+Add more workers for larger datasets:
+
+```yaml
+# In docker-compose.phase3.yml, add more trino workers
+trino-worker-1:
+  image: trinodb/trino:latest
+  depends_on:
+    - trino
+  environment:
+    - COORDINATOR=false
+    - DISCOVERY_URI=http://trino:8080
+  networks: [lake]
+
+trino-worker-2:
+  image: trinodb/trino:latest
+  depends_on:
+    - trino
+  environment:
+    - COORDINATOR=false
+    - DISCOVERY_URI=http://trino:8080
+  networks: [lake]
+```
+
+Then increase query memory in `trino/etc/config.properties`:
+```properties
+worker-concurrency=8
+query.max-memory-per-node=8GB
+query.max-total-memory-per-node=10GB
+```
+
+### 4. **Production Deployment**
+
+For production, implement security and reliability best practices:
+
+**TLS/HTTPS:**
+- Generate certificates for MinIO
+- Configure MinIO with TLS: `--tls-cert-file /certs/public.crt --tls-key-file /certs/private.key`
+- Update Trino to use HTTPS: `http-server.https.enabled=true`
+
+**IAM and Authentication:**
+- Configure S3 IAM roles for MinIO
+- Set up Trino LDAP authentication
+- Enable Superset OAuth (Google, GitHub, etc.)
+
+**High Availability:**
+- Run multiple MinIO instances with distrubuted mode
+- Use external database for Hive Metastore (Postgres in HA mode)
+- Configure Trino coordinator with backup
+
+**Backup Strategy:**
+```bash
+# Backup MinIO data
+docker exec minio mc backup bucket local/iot-telemetry s3://backup-bucket/
+
+# Backup database
+docker exec postgres-metastore pg_dump metastore_db > backups/metastore-$(date +%Y%m%d).sql
+```
 
 ## 📚 Documentation
 
