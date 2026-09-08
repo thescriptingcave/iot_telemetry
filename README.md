@@ -117,7 +117,7 @@ LIMIT 10;
 # Activate virtual environment (if using uv)
 source .venv/bin/activate
 
-# Run dbt models
+# Run dbt models (note: models not included in this repo - see ev_dbt/models for staging layer)
 cd ev_dbt
 
 # Install dependencies (first time only)
