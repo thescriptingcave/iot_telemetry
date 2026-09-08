@@ -26,7 +26,7 @@ IoT Devices → MinIO (S3) → Iceberg (Parquet) → Trino → dbt → Superset
 ### Install Python Dependencies
 
 ```bash
-pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
+pip install minio fastavro pyarrow trino dbt-core dbt-trino python-dotenv
 ```
 
 ## 🚀 Quick Start
@@ -48,10 +48,10 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ```bash
 # Create and activate virtual environment
-uv venv
+uv venv --python 3.13
 
 # Install dependencies (includes python-dotenv for .env file support)
-uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
+uv pip install minio fastavro pyarrow trino dbt-core dbt-trino python-dotenv
 ```
 
 ### Step 1: Clone and Start Services
@@ -250,10 +250,10 @@ dbt docs generate
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create virtual environment
-uv venv
+uv venv --python 3.13
 
 # Install dependencies
-uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
+uv pip install minio fastavro pyarrow trino dbt-core dbt-trino python-dotenv
 
 # Run scripts with uv
 uv run python3 scripts/generate_telemetry_ev_multimodel.py
