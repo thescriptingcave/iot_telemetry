@@ -1,9 +1,20 @@
+# Build stage
+FROM maven:3.9-eclipse-temurin-17 AS builder
+
+WORKDIR /tmp/jars
+
+# Download the JARs
+RUN curl -sS -o hadoop-aws-3.3.6.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.6/hadoop-aws-3.3.6.jar && \
+    curl -sS -o aws-java-sdk-bundle-1.12.367.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.367/aws-java-sdk-bundle-1.12.367.jar && \
+    curl -sS -o postgresql-jdbc.jar https://jdbc.postgresql.org/download/postgresql-42.7.1.jar
+
+# Runtime stage
 FROM apache/hive:4.0.0
 
-# Copy JARs directly into the image
-COPY jars/hadoop-aws-3.3.6.jar /opt/hive/lib/
-COPY jars/aws-java-sdk-bundle-1.12.367.jar /opt/hive/lib/
-COPY jars/postgresql-jdbc.jar /opt/hive/lib/
+# Copy downloaded JARs
+COPY --from=builder /tmp/jars/hadoop-aws-3.3.6.jar /opt/hive/lib/
+COPY --from=builder /tmp/jars/aws-java-sdk-bundle-1.12.367.jar /opt/hive/lib/
+COPY --from=builder /tmp/jars/postgresql-jdbc.jar /opt/hive/lib/
 
 # Copy Hadoop configuration
 COPY conf/core-site.xml /opt/hadoop/etc/hadoop/

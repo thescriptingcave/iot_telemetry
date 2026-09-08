@@ -1,0 +1,35 @@
+# JAR files - downloaded at build time
+jars/
+*.jar
+!*.example.jar
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Logs
+*.log
+logs/
+
+# Docker
+.dockerignore
+
+# Data volumes (optional - uncomment if needed)
+# minio-data/
+# superset_home/
+# metastore_pg_data/
