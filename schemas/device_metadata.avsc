@@ -1,0 +1,25 @@
+{
+  "type": "record",
+  "name": "DeviceMetadata",
+  "namespace": "iot.ev",
+  "fields": [
+    { "name": "device_id", "type": "string" },
+    { "name": "site_id", "type": "string" },
+    { "name": "asset_id", "type": "string" },
+    { "name": "connector_id", "type": "int" },
+
+    { "name": "location_name", "type": "string" },
+    { "name": "city", "type": "string" },
+    { "name": "state", "type": "string" },
+    { "name": "region", "type": "string" },
+    { "name": "grid_zone", "type": "string" },
+
+    { "name": "latitude", "type": "double" },
+    { "name": "longitude", "type": "double" },
+
+    { "name": "charger_kind", "type": "string" },
+    { "name": "firmware_version", "type": "string" },
+
+    { "name": "installed_at_ms", "type": "long" }
+  ]
+}

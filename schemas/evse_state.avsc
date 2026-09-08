@@ -1,0 +1,75 @@
+{
+  "type": "record",
+  "name": "EVSEStateReading",
+  "namespace": "iot.evse",
+  "doc": "Operational state telemetry for an EVSE connector. Complements electrical readings and sessions.",
+  "fields": [
+    { "name": "site_id", "type": "string" },
+    { "name": "asset_id", "type": "string" },
+    { "name": "connector_id", "type": "int" },
+
+    { "name": "device_id", "type": "string" },
+    {
+      "name": "timestamp",
+      "type": { "type": "long", "logicalType": "timestamp-millis" }
+    },
+
+    {
+      "name": "state",
+      "type": {
+        "type": "enum",
+        "name": "EVSEState",
+        "symbols": [
+          "IDLE",
+          "WAITING_FOR_AUTH",
+          "PREPARING",
+          "CHARGING",
+          "STOPPING",
+          "FAULTED",
+          "DERATED",
+          "MAINTENANCE",
+          "OFFLINE"
+        ]
+      },
+      "default": "IDLE"
+    },
+
+    { "name": "available", "type": "boolean", "default": true },
+
+    {
+      "name": "fault_active",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "name": "fault_code",
+      "type": ["null", "string"],
+      "default": null
+    },
+
+    {
+      "name": "derate_pct",
+      "type": ["null", "float"],
+      "default": null
+    },
+
+    {
+      "name": "charger_temp_c",
+      "type": ["null", "float"],
+      "default": null
+    },
+
+    {
+      "name": "uptime_s",
+      "type": ["null", "long"],
+      "default": null,
+      "doc": "Optional: monotonically increasing per device boot"
+    },
+
+    {
+      "name": "firmware_version",
+      "type": ["null", "string"],
+      "default": null
+    }
+  ]
+}

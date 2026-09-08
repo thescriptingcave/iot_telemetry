@@ -1,0 +1,38 @@
+# THE ULTIMATE SOLUTION
+# The issue: Superset's Python doesn't include /usr/local in sys.path
+# Solution: Install to a location that IS in sys.path
+
+FROM apache/superset:latest
+
+USER root
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    g++ \
+    python3-dev \
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Get the site-packages directory that Python actually uses
+RUN python -c "import site; print(site.getsitepackages())" > /tmp/site_info.txt && \
+    cat /tmp/site_info.txt
+
+# Install directly to Python's site-packages using pip
+# The trick: Use the python that Superset uses to run pip
+RUN python -m pip install --no-cache-dir \
+    trino==0.329.0 \
+    sqlalchemy-trino==0.5.0
+
+# Double-check it's in the right place
+RUN echo "=== Checking installation ===" && \
+    python -c "import site; print('Site packages:', site.getsitepackages())" && \
+    pip show trino && \
+    echo "=== Verifying import ===" && \
+    python -c "import trino; print('✓ Trino version:', trino.__version__)" && \
+    python -c "from sqlalchemy import create_engine; engine = create_engine('trino://user@host:8080/catalog'); print('✓ SQLAlchemy Trino dialect loaded')"
+
+USER superset
+
+# Final verification as superset user
+RUN python -c "import trino; print('✓ Trino accessible as superset user:', trino.__version__)"

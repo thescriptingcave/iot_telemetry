@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "HumidityReading",
+  "namespace": "iot.telemetry",
+  "fields": [
+    { "name": "device_id", "type": "string" },
+    { "name": "timestamp", "type": "long", "logicalType": "timestamp-millis" },
+    { "name": "relative_humidity_pct", "type": "float" },
+    { "name": "dew_point_c", "type": "float" },
+    { "name": "location", "type": "string" }
+  ]
+}

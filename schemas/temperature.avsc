@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "TemperatureReading",
+  "namespace": "iot.telemetry",
+  "fields": [
+    { "name": "device_id", "type": "string" },
+    { "name": "timestamp", "type": "long", "logicalType": "timestamp-millis" },
+    { "name": "value_celsius", "type": "float" },
+    { "name": "unit", "type": { "type": "enum", "name": "Unit", "symbols": ["C", "F", "K"] }, "default": "C" },
+    { "name": "accuracy_pct", "type": ["null", "float"], "default": null },
+    { "name": "status", "type": { "type": "enum", "name": "TempStatus", "symbols": ["NORMAL", "HIGH", "CRITICAL"] } }
+  ]
+}

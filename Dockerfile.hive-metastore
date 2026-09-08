@@ -1,0 +1,9 @@
+FROM apache/hive:4.0.0
+
+# Copy JARs directly into the image
+COPY jars/hadoop-aws-3.3.6.jar /opt/hive/lib/
+COPY jars/aws-java-sdk-bundle-1.12.367.jar /opt/hive/lib/
+COPY jars/postgresql-jdbc.jar /opt/hive/lib/
+
+# Copy Hadoop configuration
+COPY conf/core-site.xml /opt/hadoop/etc/hadoop/

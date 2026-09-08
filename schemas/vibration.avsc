@@ -1,0 +1,13 @@
+{
+  "type": "record",
+  "name": "VibrationReading",
+  "namespace": "iot.telemetry",
+  "fields": [
+    { "name": "device_id", "type": "string" },
+    { "name": "timestamp", "type": "long", "logicalType": "timestamp-millis" },
+    { "name": "rms_acceleration", "type": "float" },
+    { "name": "peak_frequency_hz", "type": "float" },
+    { "name": "bandwidth_hz", "type": "float" },
+    { "name": "sensor_model", "type": "string" }
+  ]
+}

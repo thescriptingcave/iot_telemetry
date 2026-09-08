@@ -1,0 +1,78 @@
+{
+  "type": "record",
+  "name": "EVSEElectricalReading",
+  "namespace": "iot.evse",
+  "doc": "Electrical telemetry for an EVSE connector. Designed for time-series analytics and load/derate analysis.",
+  "fields": [
+    { "name": "site_id", "type": "string" },
+    { "name": "asset_id", "type": "string", "doc": "Charger cabinet or station identifier" },
+    { "name": "connector_id", "type": "int", "doc": "Connector/port number on the EVSE (e.g., 1,2)" },
+
+    { "name": "device_id", "type": "string", "doc": "Telemetry device identifier (can equal asset_id for simple sims)" },
+    {
+      "name": "timestamp",
+      "type": { "type": "long", "logicalType": "timestamp-millis" }
+    },
+
+    { "name": "voltage_v", "type": "float" },
+    { "name": "current_a", "type": "float" },
+    { "name": "power_kw", "type": "float" },
+
+    {
+      "name": "energy_kwh_total",
+      "type": "double",
+      "doc": "Cumulative meter reading for this connector (monotonic increasing in normal operation)"
+    },
+
+    {
+      "name": "power_factor",
+      "type": ["null", "float"],
+      "default": null,
+      "doc": "0..1 (optional); useful for grid/power quality analysis"
+    },
+
+    {
+      "name": "grid_frequency_hz",
+      "type": ["null", "float"],
+      "default": null,
+      "doc": "Usually ~60 in US; optional"
+    },
+
+    {
+      "name": "phase",
+      "type": [
+        "null",
+        {
+          "type": "enum",
+          "name": "Phase",
+          "symbols": ["SINGLE_PHASE", "THREE_PHASE"]
+        }
+      ],
+      "default": null
+    },
+
+    {
+      "name": "temperature_cabinet_c",
+      "type": ["null", "float"],
+      "default": null,
+      "doc": "Optional cabinet temp to correlate derate with heat"
+    },
+
+    {
+      "name": "derate_pct",
+      "type": ["null", "float"],
+      "default": null,
+      "doc": "0..100; optional; when present indicates throttling/derating"
+    },
+
+    {
+      "name": "status",
+      "type": {
+        "type": "enum",
+        "name": "ElectricalStatus",
+        "symbols": ["OK", "DERATED", "FAULTED"]
+      },
+      "default": "OK"
+    }
+  ]
+}

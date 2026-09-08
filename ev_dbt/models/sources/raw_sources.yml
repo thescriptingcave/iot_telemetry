@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: raw
+    catalog: hive
+    schema: raw
+    tables:
+      - name: temperature
+      - name: humidity
+      - name: vibration
+      - name: evse_electrical
+      - name: evse_state
+      - name: evse_session_event
+      - name: device_metadata
+

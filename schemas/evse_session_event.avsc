@@ -1,0 +1,90 @@
+{
+  "type": "record",
+  "name": "EVSESessionEvent",
+  "namespace": "iot.evse",
+  "doc": "Event stream for charging sessions (start/stop/fault). Useful for session KPIs, reliability metrics, and funnel analysis.",
+  "fields": [
+    { "name": "site_id", "type": "string" },
+    { "name": "asset_id", "type": "string" },
+    { "name": "connector_id", "type": "int" },
+
+    { "name": "device_id", "type": "string" },
+    {
+      "name": "timestamp",
+      "type": { "type": "long", "logicalType": "timestamp-millis" }
+    },
+
+    { "name": "session_id", "type": "string", "doc": "Unique session identifier" },
+
+    {
+      "name": "event_type",
+      "type": {
+        "type": "enum",
+        "name": "SessionEventType",
+        "symbols": [
+          "PLUG_IN",
+          "AUTH_OK",
+          "AUTH_FAIL",
+          "CHARGE_START",
+          "CHARGE_STOP",
+          "UNPLUG",
+          "DERATE",
+          "FAULT",
+          "RECOVERED"
+        ]
+      }
+    },
+
+    {
+      "name": "reason_code",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Human/normalized reason (e.g., OVER_TEMP, GROUND_FAULT, USER_STOP)"
+    },
+
+    {
+      "name": "severity",
+      "type": [
+        "null",
+        {
+          "type": "enum",
+          "name": "EventSeverity",
+          "symbols": ["INFO", "WARN", "ERROR", "CRITICAL"]
+        }
+      ],
+      "default": null
+    },
+
+    {
+      "name": "meter_start_kwh",
+      "type": ["null", "double"],
+      "default": null
+    },
+    {
+      "name": "meter_end_kwh",
+      "type": ["null", "double"],
+      "default": null
+    },
+
+    {
+      "name": "energy_delivered_kwh",
+      "type": ["null", "double"],
+      "default": null,
+      "doc": "Convenience field; may be derived later"
+    },
+
+    {
+      "name": "duration_s",
+      "type": ["null", "long"],
+      "default": null,
+      "doc": "Duration for stop events (optional)"
+    },
+
+    {
+      "name": "user_id_hash",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Optional anonymized user identifier"
+    }
+  ]
+}
