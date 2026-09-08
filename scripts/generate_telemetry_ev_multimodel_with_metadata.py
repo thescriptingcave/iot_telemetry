@@ -26,8 +26,8 @@ from avro.io import BinaryEncoder, BinaryDecoder
 SCHEMAS_DIR = Path("./schemas")
 DATA_DIR = Path("./data")
 MINIO_ENDPOINT = "localhost:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
+MINIO_ACCESS_KEY = env_str("MINIO_ROOT_USER", "minioadmin")
+MINIO_SECRET_KEY = env_str("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_SECURE = False
 MINIO_BUCKET = "ev-telemetry"
 

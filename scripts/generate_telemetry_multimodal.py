@@ -11,14 +11,15 @@ Requires:
 - minio
 - fastavro
 - pyarrow
+- python-dotenv
 
 Run:
   python generate_telemetry_multimodal.py
 
-Common env vars:
+Common env vars (from .env file or command line):
   MINIO_ENDPOINT           (default: localhost:9000)
-  MINIO_ACCESS_KEY         (default: minioadmin)
-  MINIO_SECRET_KEY         (default: minioadmin)
+  MINIO_ROOT_USER          (default: minioadmin)
+  MINIO_ROOT_PASSWORD      (default: change-this-password-in-production)
   MINIO_SECURE             (default: false)
   MINIO_BUCKET             (default: iot-telemetry)
 
@@ -44,6 +45,12 @@ Fault injection:
 """
 
 from __future__ import annotations
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import json
 import os
@@ -82,8 +89,8 @@ def env_float(name: str, default: float) -> float:
 
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_SECURE = env_bool("MINIO_SECURE", False)
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "iot-telemetry")
 

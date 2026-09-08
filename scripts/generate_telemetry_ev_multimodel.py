@@ -20,7 +20,7 @@ Key improvements vs earlier version:
 3) PARQUET + ZSTD: Efficient columnar format with compression (typically 70-90% size reduction)
 
 Dependencies:
-  pip install minio fastavro pyarrow
+  pip install minio fastavro pyarrow python-dotenv
 
 Required Avro schemas in SCHEMAS_DIR:
   temperature.avsc
@@ -30,10 +30,10 @@ Required Avro schemas in SCHEMAS_DIR:
   evse_state.avsc
   evse_session_event.avsc
 
-Env vars (common):
+Env vars (from .env file or command line):
   MINIO_ENDPOINT           default: localhost:9000
-  MINIO_ACCESS_KEY         default: minioadmin
-  MINIO_SECRET_KEY         default: minioadmin
+  MINIO_ROOT_USER          default: minioadmin
+  MINIO_ROOT_PASSWORD      default: change-this-password-in-production
   MINIO_SECURE             default: false
   MINIO_BUCKET             default: iot-telemetry
 
@@ -93,6 +93,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 from fastavro import parse_schema
 from minio import Minio
 
@@ -123,8 +129,8 @@ def env_str(name: str, default: str) -> str:
 
 
 MINIO_ENDPOINT = env_str("MINIO_ENDPOINT", "localhost:9000")
-MINIO_ACCESS_KEY = env_str("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = env_str("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS_KEY = env_str("MINIO_ROOT_USER", "minioadmin")
+MINIO_SECRET_KEY = env_str("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_SECURE = env_bool("MINIO_SECURE", False)
 MINIO_BUCKET = env_str("MINIO_BUCKET", "iot-telemetry")
 

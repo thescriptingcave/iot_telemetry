@@ -117,8 +117,8 @@ def env_str(name: str, default: str) -> str:
 
 
 MINIO_ENDPOINT = env_str("MINIO_ENDPOINT", "127.0.0.1:9000")
-MINIO_ACCESS_KEY = env_str("MINIO_ACCESS_KEY", "admin")
-MINIO_SECRET_KEY = env_str("MINIO_SECRET_KEY", "password")
+MINIO_ACCESS_KEY = env_str("MINIO_ROOT_USER", "admin")
+MINIO_SECRET_KEY = env_str("MINIO_ROOT_PASSWORD", "password")
 MINIO_SECURE = env_bool("MINIO_SECURE", False)
 MINIO_BUCKET = env_str("MINIO_BUCKET", "iot-telemetry")
 

@@ -7,8 +7,14 @@ Usage:
     MAX_RECORDS=1000 python generate_telemetry.py
 
 Dependencies:
-    pip install minio fastavro pyarrow
+    pip install minio fastavro pyarrow python-dotenv
 """
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 import os
 import json
@@ -33,8 +39,8 @@ except ImportError:
 
 # --- Load environment variables (env vars or defaults) ---
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ROOT_USER", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
 MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "iot-telemetry")
 MAX_RECORDS = int(os.getenv("MAX_RECORDS", "0"))

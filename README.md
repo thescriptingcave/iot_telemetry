@@ -26,7 +26,7 @@ IoT Devices → MinIO (S3) → Hive (Avro) → Iceberg (Parquet) → Trino → d
 ### Install Python Dependencies
 
 ```bash
-pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
 ```
 
 ## 🚀 Quick Start
@@ -50,8 +50,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Create and activate virtual environment
 uv venv
 
-# Install dependencies
-uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+# Install dependencies (includes python-dotenv for .env file support)
+uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
 ```
 
 ### Step 1: Clone and Start Services
