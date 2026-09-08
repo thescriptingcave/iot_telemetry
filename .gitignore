@@ -33,3 +33,5 @@ logs/
 # minio-data/
 # superset_home/
 # metastore_pg_data/
+/data/
+/data/*
