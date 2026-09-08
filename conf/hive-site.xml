@@ -2,6 +2,14 @@
 <?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
 <configuration>
   <property>
+    <name>hive.metastore.warehouse.dir</name>
+    <value>s3://iot-telemetry/warehouse</value>
+  </property>
+  <property>
+    <name>hadoop.conf.dir</name>
+    <value>/opt/hadoop/etc/hadoop</value>
+  </property>
+  <property>
     <name>fs.s3a.impl</name>
     <value>org.apache.hadoop.fs.s3a.S3AFileSystem</value>
   </property>

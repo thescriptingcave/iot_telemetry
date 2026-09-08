@@ -18,3 +18,4 @@ COPY --from=builder /tmp/jars/postgresql-jdbc.jar /opt/hive/lib/
 
 # Copy Hadoop configuration
 COPY conf/core-site.xml /opt/hadoop/etc/hadoop/
+COPY conf/hive-site.xml /opt/hive/conf/
