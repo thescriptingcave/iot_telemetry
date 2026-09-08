@@ -1,9 +1,9 @@
 # EV Telemetry Lakehouse Runbook
 
 ## Purpose
-This runbook provides a single reference for operating and troubleshooting the local EV telemetry data platform. It covers MinIO storage, Trino query engine, Hive raw ingestion, Iceberg curated tables, Docker orchestration, and dbt transformations.
+Single reference for operating and troubleshooting the local EV telemetry data platform: MinIO (S3) storage, Iceberg REST catalog + curated tables, Trino query engine, the telemetry generator (with direct PyIceberg sink), dbt, and Superset.
 
-Use this document as a daily operational guide and recovery reference.
+> **Pipeline (Option A):** the generator writes Parquet (ZSTD) raw files to MinIO **and** appends the same batches straight into Iceberg curated tables via PyIceberg → REST catalog. Hive is no longer part of the pipeline; the `hive` catalog / metastore in the stack is legacy and can be ignored.
 
 ---
 
@@ -11,301 +11,366 @@ Use this document as a daily operational guide and recovery reference.
 
 ## Architecture Flow
 
-Avro Generator → MinIO (S3) → Hive External Tables → Iceberg Tables → dbt Models → Analytics
+```
+Generator ──▶ MinIO (S3) ──raw──▶ s3://iot-telemetry/ev_v1/{stream}/year=../
+    │
+    └────────▶ Iceberg REST (s3://warehouse/curated/{stream}) ──▶ Trino ──▶ dbt ──▶ Superset
+```
 
 ## Core Components
 
-- MinIO: Object storage (Avro + Parquet)
-- Hive Metastore: Table metadata store
-- Trino: Query engine
-- Iceberg: Table format for curated data
-- dbt: Transformations + modeling
-- Docker Compose: Orchestration
+- **MinIO**: object storage (raw Parquet files + Iceberg warehouse). Ports 9000/9001.
+- **iceberg-rest**: REST catalog (port 8181) with warehouse `s3://warehouse/`, backed by an embedded SQLite DB.
+- **Trino**: query engine (port 8080), catalogs: `iceberg`, `hive` (legacy), `system`.
+- **PyIceberg sink**: inside the generator, appends rows to `iceberg.curated.<stream>` tables partitioned by `day(timestamp)`.
+- **dbt**: transformations in `ev_dbt/`.
+- **Superset**: BI/visualization (port 8088).
+
+## Credentials
+
+All come from `.env` — see `.env.example` for the template.
+
+| Thing | Value |
+|---|---|
+| MinIO user | `MINIO_ROOT_USER=minioadmin` |
+| MinIO password | `MINIO_ROOT_PASSWORD=change-this-password-in-production` |
+| Superset | `admin` / `admin` |
+
+If you rotate MinIO creds, they must match in `.env`, `docker-compose.phase3.yml`, and the Iceberg REST / Trino catalog configs.
 
 ---
 
-# Section 1 — MinIO Operations (mc)
+# Section 1 — MinIO Operations
 
-## One-Time Setup
-Create local alias:
+`mc` is not installed on the host; use the copy inside the MinIO container.
 
-mc alias set local http://127.0.0.1:9000 admin password
+```bash
+docker exec minio mc alias set local http://localhost:9000 minioadmin "change-this-password-in-production"
+```
 
-Verify alias:
+Inspect storage:
 
-mc alias list
+```bash
+docker exec minio mc ls local/                     # buckets: iot-telemetry, warehouse
+docker exec minio mc ls local/iot-telemetry/ev_v1/
+docker exec minio mc ls -r local/iot-telemetry/ev_v1/temperature/ | head
+docker exec minio mc ls -r local/warehouse/curated/temperature/ | head
+```
 
-## Inspect Storage
-List buckets:
+Layout:
 
-mc ls local
-
-List project bucket:
-
-mc ls local/iot-telemetry/
-
-List generated telemetry data:
-
-mc ls local/iot-telemetry/ev_v1/
-
-Preview files:
-
-mc ls -r local/iot-telemetry/ev_v1/temperature/ | head
-
-## Schema Management
-Create schemas folder:
-
-mc mb local/iot-telemetry/schemas 2>/dev/null || true
-
-Upload all schemas:
-
-mc cp --recursive schemas/ local/iot-telemetry/schemas/
-
-Verify upload:
-
-mc ls local/iot-telemetry/schemas/
-
-Inspect a schema file:
-
-mc cat local/iot-telemetry/schemas/temperature.avsc | head
+- Raw: `s3://iot-telemetry/ev_v1/{stream}/{year=...}/{month=...}/...parquet`
+- Iceberg tables: `s3://warehouse/curated/{stream}/{data|metadata}/...`
+- Iceberg data files are physically partitioned `timestamp_day=YYYY-MM-DD`.
 
 ---
 
 # Section 2 — Docker Operations
 
-## Stack Control
-Start entire stack:
+This repo only has `docker-compose.phase3.yml`; always pass `-f`:
 
-docker compose up -d
+```bash
+docker compose -f docker-compose.phase3.yml up -d      # start
+docker compose -f docker-compose.phase3.yml ps         # status
+docker compose -f docker-compose.phase3.yml down       # stop
+docker compose -f docker-compose.phase3.yml restart trino
+docker compose -f docker-compose.phase3.yml up -d --build   # rebuild (e.g. hive-metastore config mounts are bind mounts; rarely needed)
+```
 
-Stop stack:
+Key ports: minio 9000/9001 · trino 8080 · iceberg-rest 8181 · superset 8088 · hive-metastore 9083 (legacy).
 
-docker compose down
+Logs / shell:
 
-Restart stack:
-
-docker compose restart
-
-Rebuild containers:
-
-docker compose up -d --build
-
-## Monitoring
-List containers:
-
-docker ps
-
-View logs:
-
+```bash
 docker logs -f trino
-
-View last 200 lines:
-
-docker logs --tail 200 trino
-
-Shell into container:
-
-docker exec -it trino sh
-
-View resource usage:
-
-docker stats
+docker exec -it trino trino      # Trino CLI
+docker compose -f docker-compose.phase3.yml stats
+```
 
 ---
 
 # Section 3 — Trino Operations
 
-## Connect to CLI
-
+```bash
 docker exec -it trino trino
+```
 
-## System Inspection
+Inspection:
 
-SHOW CATALOGS;
+```sql
+SHOW CATALOGS;                       -- iceberg, hive (legacy), system
+SHOW SCHEMAS FROM iceberg;           -- curated
+SHOW TABLES FROM iceberg.curated;    -- the 6 curated streams
+DESCRIBE iceberg.curated.temperature;
+```
 
-SHOW SCHEMAS FROM hive;
+One-liners:
 
-SHOW SCHEMAS FROM iceberg;
-
-SHOW TABLES FROM hive.raw;
-
-SHOW TABLES FROM iceberg.curated;
+```bash
+docker exec trino trino --execute "SELECT count(*) FROM iceberg.curated.temperature;"
+```
 
 ---
 
-# Section 4 — Hive RAW Layer (Avro External Tables)
+# Section 4 — Data Generation (Generator + Iceberg Sink)
 
-## Create Raw Schema
+## Python environment
 
-CREATE SCHEMA IF NOT EXISTS hive.raw;
+The repo uses a uv-managed venv at `.venv`.
 
-## Register Datasets
+```bash
+cd /Users/dev/Documents/iot_telemetry
 
-Example (Temperature):
+# install dependencies once
+uv pip install --python .venv/bin/python minio fastavro pyarrow trino python-dotenv "pyiceberg[pyiceberg-core]"
+```
 
-CREATE TABLE hive.raw.temperature
-WITH (
-  external_location='s3://iot-telemetry/ev_v1/temperature/',
-  format='AVRO',
-  avro_schema_url='s3://iot-telemetry/schemas/temperature.avsc'
-);
+> The `pyiceberg-core` extra is required — the `day(timestamp)` partition transform is implemented in Rust (`pyiceberg_core`). Without it you get `NotInstalledError: pyiceberg_core needs to be installed`.
 
-Repeat pattern for:
-- humidity
-- vibration
-- evse_electrical
-- evse_state
-- evse_session_event
-- device_metadata
+## Run the generator
 
-## Validate
+```bash
+# loads .env for MinIO creds; connects to MinIO + Iceberg REST
+.venv/bin/python scripts/generate_telemetry_ev_multimodel.py
+```
 
-SELECT count(*) FROM hive.raw.temperature;
-SELECT * FROM hive.raw.temperature LIMIT 5;
+On startup it will print:
+
+```
+✅ Created Iceberg table curated.temperature      (…6 tables)
+✅ Iceberg curated sink connected: REST=http://localhost:8181 namespace=curated
+```
+
+Behaviors:
+
+- Runs until Ctrl-C; at stop it does a **final flush** of remaining buffers into both MinIO and Iceberg.
+- Buffers flush to MinIO + Iceberg every `FLUSH_EVERY_N_TICKS` ticks (default 300 ticks → every ~10 min at `TICK_SECONDS=2`). To see data quickly during a test, lower it (e.g. `FLUSH_EVERY_N_TICKS=10`).
+
+## Useful knobs (env vars)
+
+| Var | Default | Meaning |
+|---|---|---|
+| `ICEBERG_SINK_ENABLED` | `true` | master switch for the Iceberg sink |
+| `ICEBERG_REST_URI` | `http://localhost:8181` | REST catalog endpoint (host → container) |
+| `ICEBERG_WAREHOUSE` | `s3://warehouse/` | Iceberg warehouse location |
+| `ICEBERG_NAMESPACE` | `curated` | catalog namespace for curated tables |
+| `TICK_SECONDS` | `2` | tick interval |
+| `FLUSH_EVERY_N_TICKS` | `300` | flush cadence (ticks) |
+| `MAX_BUFFER_RECORDS` | `50000` | force flush when any buffer hits this |
+| `CHARGER_COUNT` | `8` | world size |
+| `CONNECTORS_PER_CHARGER` | `2` | world size |
+| `MAX_RECORDS` | `0` | stop when total across all streams reaches this (`0` = unlimited) |
+| `MAX_RECORDS_PER_TYPE` | `0` | stop when each stream reaches this |
+| `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | via `.env` | MinIO creds (fallback `minioadmin`) |
+
+Small test run (stops itself, ~10s):
+
+```bash
+ICEBERG_SINK_ENABLED=true TICK_SECONDS=1 FLUSH_EVERY_N_TICKS=2 \
+CHARGER_COUNT=2 CONNECTORS_PER_CHARGER=2 MAX_RECORDS=200 \
+.venv/bin/python scripts/generate_telemetry_ev_multimodel.py
+```
+
+If the sink fails to initialize, the generator logs a warning and **continues MinIO-only** — curated tables will just sit empty.
 
 ---
 
 # Section 5 — Iceberg Curated Layer
 
-## Create Schema
+## How tables are created
 
-CREATE SCHEMA IF NOT EXISTS iceberg.curated;
+The generator creates `iceberg.<namespace>.<stream>` on first run if missing (6 streams):
 
-## Convert Raw → Iceberg
+| Table | Notable columns |
+|---|---|
+| `curated.temperature` | device_id, timestamp, value_celsius, unit, accuracy_pct, status |
+| `curated.humidity` | device_id, timestamp, relative_humidity_pct, dew_point_c, location |
+| `curated.vibration` | device_id, timestamp, rms_acceleration, peak_frequency_hz, bandwidth_hz, sensor_model |
+| `curated.evse_electrical` | site_id, asset_id, connector_id, device_id, timestamp, voltage_v, current_a, power_kw, energy_kwh_total, power_factor, grid_frequency_hz, phase, temperature_cabinet_c, derate_pct, status |
+| `curated.evse_state` | site_id, asset_id, connector_id, device_id, timestamp, state, available, fault_active, fault_code, derate_pct, charger_temp_c, uptime_s, firmware_version |
+| `curated.evse_session_event` | site_id, asset_id, connector_id, device_id, timestamp, session_id, event_type, reason_code, severity, meter_start_kwh, meter_end_kwh, energy_delivered_kwh, duration_s, user_id_hash |
 
-CREATE TABLE iceberg.curated.temperature
-WITH (format='PARQUET')
-AS SELECT * FROM hive.raw.temperature;
+- `timestamp` is a real `TIMESTAMP(6)` (epoch-ms converted to UTC); partition spec is `day(timestamp)`.
+- All columns nullable.
 
-Repeat for each dataset.
+## Reset / recreate (schema drift, wrong legacy schema, etc.)
+
+Stop the generator first, then:
+
+```bash
+docker exec trino trino --execute "DROP SCHEMA IF EXISTS iceberg.curated CASCADE;"
+bash scripts/setup_iceberg.sh      # recreates the namespace (tables are recreated by the generator on next run)
+```
 
 ## Validate
 
+```sql
 SHOW TABLES FROM iceberg.curated;
-
 SELECT count(*) FROM iceberg.curated.temperature;
+SELECT min(timestamp), max(timestamp), count(*) FROM iceberg.curated.evse_electrical;
+```
 
 ---
 
-# Section 6 — dbt Operations
+# Section 6 — Time-Series Queries
 
-## Environment
+Schema note: query on `timestamp` (real timestamp); use `day(timestamp)` / `date_trunc` for bucketing. There is no separate `hour` column.
 
-Activate venv:
+```sql
+-- Temperature: per-minute trend for the last hour
+SELECT date_trunc('minute', timestamp) AS ts,
+       round(avg(value_celsius), 2) AS avg_temp_c,
+       max(value_celsius)            AS max_temp_c,
+       count(*)                      AS n
+FROM iceberg.curated.temperature
+WHERE timestamp >= now() - INTERVAL '1' HOUR
+GROUP BY 1 ORDER BY 1 DESC;
 
-source .venv-dbt/bin/activate
+-- Temperature: daily aggregates (prunes on timestamp_day partition)
+SELECT CAST(timestamp AS DATE) AS day,
+       round(min(value_celsius), 2), round(max(value_celsius), 2), round(avg(value_celsius), 2)
+FROM iceberg.curated.temperature
+WHERE timestamp >= current_date - INTERVAL '7' DAY
+GROUP BY 1 ORDER BY 1 DESC;
 
-Check installation:
+-- Humidity
+SELECT date_trunc('hour', timestamp) AS hour,
+       round(avg(relative_humidity_pct), 1),
+       round(avg(dew_point_c), 1)
+FROM iceberg.curated.humidity
+GROUP BY 1 ORDER BY 1 DESC LIMIT 24;
 
-dbt --version
+-- EVSE power/energy for the last 24h
+SELECT CAST(timestamp AS DATE) AS day,
+       count(DISTINCT connector_id) AS connectors,
+       round(sum(power_kw), 2)       AS kwh_est,
+       round(avg(voltage_v), 1)      AS avg_volts,
+       round(avg(current_a), 2)      AS avg_amps
+FROM iceberg.curated.evse_electrical
+WHERE timestamp >= now() - INTERVAL '24' HOUR
+GROUP BY 1 ORDER BY 1 DESC;
 
-## Project Lifecycle
+-- Faults / derated connectors (most recent activity)
+SELECT timestamp, device_id, state, fault_code, derate_pct, charger_temp_c
+FROM iceberg.curated.evse_state
+WHERE fault_active = true
+ORDER BY timestamp DESC LIMIT 100;
 
-Validate connection:
+-- Session events bucketed by hour
+SELECT date_trunc('hour', timestamp) AS hour, event_type, severity, count(*) AS n
+FROM iceberg.curated.evse_session_event
+WHERE timestamp >= current_date
+GROUP BY 1, 2, 3 ORDER BY 1 DESC;
+```
 
-dbt debug
+---
 
-Compile SQL:
+# Section 7 — Iceberg Maintenance
 
+```sql
+-- Full rewrite of a table's data files
+ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE;
+
+-- Rewrite recent data only (predicate on timestamp, the partition column)
+ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE
+WHERE timestamp >= now() - INTERVAL '7' DAY;
+
+-- Expire snapshots / history
+CALL iceberg.system.expire_snapshots('curated', 'evse_electrical', timestamp => now() - INTERVAL '7' DAY);
+
+-- Snapshot history / time travel
+SELECT * FROM iceberg.curated.temperature FOR VERSION AS OF <snapshot_id> LIMIT 10;
+```
+
+Schedule OPTIMIZE in off-peak hours (small test runs create many tiny files — OPTIMIZE is worth running after long sessions).
+
+---
+
+# Section 8 — dbt Operations
+
+```bash
+source .venv/bin/activate
+cd ev_dbt
+dbt debug                # verify Trino connection (profiles.yml not committed — create it: trino://<user>@localhost:8080/iceberg, schema=curated)
 dbt compile
-
-Run models:
-
-dbt run
-
-Run single model:
-
 dbt run -s stg_temperature
-
-Run tests:
-
 dbt test
-
-Generate docs:
-
-dbt docs generate
-
-Serve docs:
-
 dbt docs serve --port 8088
+```
 
 ---
 
-# Section 7 — Daily Startup Checklist
+# Section 9 — Daily Startup Checklist
 
-1) Start stack
-2) Confirm containers running
-3) Confirm MinIO accessible
-4) Confirm Trino catalogs
-5) Confirm Iceberg tables visible
+```bash
+docker compose -f docker-compose.phase3.yml up -d
+docker compose -f docker-compose.phase3.yml ps                    # minio, iceberg-rest, trino, superset healthy
 
-Commands:
+docker exec minio mc ls local/                                    # buckets present
+docker exec trino trino --execute "SHOW TABLES FROM iceberg.curated;"
 
-docker compose up -d
+# generate (auto-creates tables if missing, appends on flush)
+.venv/bin/python scripts/generate_telemetry_ev_multimodel.py
 
-docker compose ps
-
-mc ls local/iot-telemetry/
-
-SHOW CATALOGS;
-
-SHOW TABLES FROM iceberg.curated;
+# sanity check
+docker exec trino trino --execute "SELECT count(*) FROM iceberg.curated.temperature;"
+```
 
 ---
 
-# Section 8 — Troubleshooting Guide
+# Section 10 — Troubleshooting
 
-## Trino Not Reachable
+## Iceberg tables missing / `SHOW TABLES` empty
 
-Check container:
+Sink didn't create them yet — either the generator hasn't run, or sink init failed:
 
+```bash
+docker logs trino | tail               # look for "Iceberg curated sink connected"
+curl http://localhost:8181/            # REST catalog reachable?
+docker compose -f docker-compose.phase3.yml logs iceberg-rest
+```
+
+## `NotInstalledError: pyiceberg_core needs to be installed`
+
+```bash
+uv pip install --python .venv/bin/python "pyiceberg[pyiceberg-core]"
+```
+
+## `SignatureDoesNotMatch` or access-denied writing to MinIO
+
+Credentials mismatch. `.env` must set `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` to the same values MinIO runs with; same values must be in `flyway`/catalog configs for iceberg-rest and Trino (`trino/etc/catalog/iceberg.properties`, `trino/etc/catalog/hive.properties`).
+
+## Existing curated table has an old/incorrect schema
+
+Tables created before the Option A pivot (the old `event_ts/day/hour` layout) are empty and safe to drop:
+
+```bash
+docker exec trino trino --execute "DROP SCHEMA IF EXISTS iceberg.curated CASCADE;"
+bash scripts/setup_iceberg.sh
+# rerun the generator; it recreates the 6 tables with the data-driven schema
+```
+
+## Hive tables return zero rows or Hive errors
+
+`hive` catalog is legacy and not part of the current pipeline — ignore it. (If ever needed again: `hive.recursive-directories=true` is already set, and creds in `trino/etc/catalog/hive.properties` were fixed to the MinIO root user.)
+
+## Trino not reachable
+
+```bash
 docker ps | grep trino
-
-Restart:
-
 docker restart trino
+docker logs --tail 200 trino
+```
 
-## Hive Tables Return Zero Rows
+## Superset can't find tables
 
-Likely missing recursive read.
-Ensure hive.properties contains:
-
-hive.recursive-directories=true
-
-Restart Trino.
-
-## Schemas Missing
-
-mc ls local/iot-telemetry/schemas/
-
-Re-upload if needed.
-
-## Iceberg Tables Not Appearing
-
-SHOW SCHEMAS FROM iceberg;
-
-Check metastore container.
-
-## dbt Connection Errors
-
-Run:
-
-dbt debug
-
-Verify host, port, catalog, schema in profiles.yml
+Connect Trino database with uri `trino://<user>@localhost:8080/iceberg/curated` and refresh. Ensure the generator has created tables.
 
 ---
 
-# Section 9 — Operational Strategy
+# Operational Strategy
 
-RAW Layer:
-- Immutable Avro ingestion
-
-CURATED Layer:
-- Iceberg optimized for analytics
-
-DBT Layer:
-- Staging → Marts → Business models
-
-This design mirrors production-grade lakehouse architecture.
-
+- **RAW layer** (`s3://iot-telemetry/ev_v1/`): immutable Parquet (ZSTD) point-in-time snapshot of everything generated.
+- **CURATED layer** (`iceberg.curated.*`): Iceberg tables mirroring the records, partitioned by `day(timestamp)` for cheap time-series pruning; written inline by the generator.
+- **DBT layer**: staging → marts → business models (use the curated tables).
+- **BI**: Superset over Trino (`localhost:8080`).
