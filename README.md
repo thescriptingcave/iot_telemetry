@@ -16,13 +16,43 @@ IoT Devices → MinIO (S3) → Hive (Avro) → Iceberg (Parquet) → Trino → d
 - **dbt** - Data transformation tool
 - **Superset** - BI/visualization
 
+## 📦 Prerequisites
+
+- Docker Desktop installed
+- Docker Compose v2+
+- Python 3.8+
+- ~4GB RAM free
+
+### Install Python Dependencies
+
+```bash
+pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Docker Desktop installed
 - Docker Compose v2+
+- Python 3.8+
 - ~4GB RAM free
+
+### Install `uv` Package Manager
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Install Python Dependencies with `uv`
+
+```bash
+# Create and activate virtual environment
+uv venv
+
+# Install dependencies
+uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+```
 
 ### Step 1: Clone and Start Services
 
@@ -100,6 +130,9 @@ WITH (
 ### Step 6: Run dbt Transformations
 
 ```bash
+# Activate virtual environment (if using uv)
+source .venv/bin/activate
+
 # Run dbt models
 cd ev_dbt
 
@@ -216,10 +249,28 @@ docker compose -f docker-compose.phase3.yml logs -f
 # Generate new data
 python3 scripts/generate_telemetry_ev_multimodel.py
 
-# Run dbt
+# Run dbt (activate venv first if using uv)
+source .venv/bin/activate
 dbt run
 dbt test
 dbt docs generate
+```
+
+## 📦 Using `uv` (Recommended)
+
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Create virtual environment
+uv venv
+
+# Install dependencies
+uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+
+# Run scripts with uv
+uv run python3 scripts/generate_telemetry_ev_multimodel.py
+uv run dbt run
 ```
 
 ## 🎯 Next Steps
