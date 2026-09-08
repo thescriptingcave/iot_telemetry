@@ -94,6 +94,9 @@ This will:
 # Connect to Trino
 docker exec -it trino trino
 
+
+# Setup Iceberg schema and tables (run once)
+!bash scripts/setup_iceberg.sh
 # Check catalogs
 SHOW CATALOGS;
 
