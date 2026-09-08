@@ -59,7 +59,7 @@ services:
       CATALOG_S3_ENDPOINT: http://minio:9000
       CATALOG_S3_PATH__STYLE__ACCESS: "true"
       CATALOG_S3_ACCESS__KEY__ID: minioadmin
-      CATALOG_S3_SECRET__ACCESS__KEY: change-this-password-in-production
+      CATALOG_S3_SECRET__ACCESS__KEY: password
       AWS_REGION: us-east-1
     volumes:
       - iceberg_catalog:/tmp
