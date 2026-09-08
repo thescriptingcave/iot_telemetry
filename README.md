@@ -5,13 +5,13 @@ This guide will help you get the EV Telemetry Lakehouse platform up and running 
 ## 🏗️ Architecture
 
 ```
-IoT Devices → MinIO (S3) → Hive (Avro) → Iceberg (Parquet) → Trino → dbt → Superset
+IoT Devices → MinIO (S3) → Iceberg (Parquet) → Trino → dbt → Superset
 ```
 
 **Components:**
 - **MinIO** - S3-compatible object storage
-- **Hive Metastore** - Table metadata
-- **Trino** - Query engine (Iceberg + Hive connectors)
+- **Iceberg REST Catalog** - Modern table metadata (replaces Hive Metastore)
+- **Trino** - Query engine (Iceberg + S3 connectors)
 - **Iceberg** - Table format for optimized analytics
 - **dbt** - Data transformation tool
 - **Superset** - BI/visualization
@@ -74,7 +74,7 @@ All services should show **healthy** status:
 - ✅ minio (port 9000)
 - ✅ trino (port 8080)
 - ✅ superset (port 8088)
-- ✅ hive-metastore (port 9083)
+- ✅ iceberg-rest (port 8181)
 
 ### Step 3: Generate Telemetry Data
 
@@ -88,17 +88,19 @@ This will:
 - Create partitioned Parquet files (ZSTD compressed)
 - Generate ~1000+ records
 
-### Step 4: Query with Trino CLI
+### Step 4: Query with Trino (Iceberg)
 
 ```bash
 # Connect to Trino
-docker exec -it trino trino --catalog iceberg
+docker exec -it trino trino
 
 # Check catalogs
 SHOW CATALOGS;
 
-# List tables
+# List Iceberg schemas
 SHOW SCHEMAS FROM iceberg;
+
+# List Iceberg tables
 SHOW TABLES FROM iceberg.curated;
 
 # Run a query
@@ -109,25 +111,7 @@ ORDER BY day DESC
 LIMIT 10;
 ```
 
-### Step 5: Load Data into Iceberg
-
-```bash
-# Create curated tables from raw Avro data
-docker exec -it trino trino --catalog hive
-
-CREATE SCHEMA IF NOT EXISTS iceberg.curated;
-
--- Convert raw data to Iceberg with optimization
-CREATE TABLE iceberg.curated.temperature
-WITH (
-  format='PARQUET',
-  partitioning=ARRAY['day(event_ts)', 'device_id']
-) AS SELECT * FROM hive.raw.temperature;
-
--- Repeat for other tables...
-```
-
-### Step 6: Run dbt Transformations
+### Step 5: Run dbt Transformations
 
 ```bash
 # Activate virtual environment (if using uv)
@@ -146,7 +130,7 @@ dbt run
 dbt test
 ```
 
-### Step 7: Access Superset
+### Step 6: Access Superset
 
 Open your browser to:
 - **Superset:** http://localhost:8088
@@ -157,7 +141,7 @@ Open your browser to:
 1. Go to **Data** → **Databases**
 2. Add new database with connection string:
    ```
-   trino://user@localhost:8080/hive/default
+   trino://user@localhost:8080/iceberg
    ```
 
 ## 📊 Performance Optimizations Applied
@@ -168,9 +152,9 @@ Open your browser to:
 - **Partitioning** - year/month/day/hour structure
 
 ### Query Performance
-- **8GB query memory** allocated to Trino
 - **Column pruning** eliminates unnecessary data reads
 - **Predicate pushdown** filters data at storage level
+- **Vectorized execution** for faster processing
 
 ### Data Quality
 - Automated tests on all models
@@ -224,6 +208,9 @@ curl http://localhost:9000/minio/health/live
 
 # Test Trino
 docker exec trino trino --execute "SELECT 1"
+
+# Verify Iceberg REST catalog
+docker exec trino trino --execute "SHOW SCHEMAS FROM iceberg;"
 ```
 
 ### Out of Memory
@@ -266,7 +253,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 uv venv
 
 # Install dependencies
-uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres
+uv pip install minio fastavro pyarrow trino dbt-core dbt-postgres python-dotenv
 
 # Run scripts with uv
 uv run python3 scripts/generate_telemetry_ev_multimodel.py
@@ -275,30 +262,30 @@ uv run dbt run
 
 ## 🎯 Next Steps
 
-### 1. **Load Data with Iceberg OPTIMIZE**
+### 1. **Iceberg Table Operations**
 
-Once data is written to MinIO, optimize the Iceberg tables for query performance:
+Iceberg tables provide time travel, schema evolution, and ACID transactions:
 
 ```bash
-# Connect to Trino
-docker exec -it trino trino --catalog iceberg
+# Show all Iceberg tables
+docker exec -it trino trino --execute "SHOW TABLES FROM iceberg.curated;"
 
--- Run OPTIMIZE on each table
-ALTER TABLE iceberg.curated.evse_electrical EXECUTE OPTIMIZE;
-ALTER TABLE iceberg.curated.evse_state EXECUTE OPTIMIZE;
-ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE;
-ALTER TABLE iceberg.curated.humidity EXECUTE OPTIMIZE;
-ALTER TABLE iceberg.curated.vibration EXECUTE OPTIMIZE;
+# Query with time travel
+SELECT * FROM iceberg.curated.temperature FOR VERSION AS OF 'timestamp';
+
+# Run table maintenance
+CALL iceberg.system.optimize('curated', 'evse_electrical', action => 'rewrite_data_files');
+
+# View table properties
+DESCRIBE iceberg.curated.evse_electrical;
 ```
-
-This compacts small files and updates table statistics for better query planning.
 
 ### 2. **Configure Alerts and Monitoring**
 
-Set up monitoring for your lakehouse infrastructure:
+Set up monitoring for your lakehouse infrastructure using Prometheus and Grafana:
 
 ```yaml
-# Example Prometheus configuration (add to docker-compose)
+# Add to docker-compose.phase3.yml services
 prometheus:
   image: prom/prometheus:latest
   ports:
@@ -310,15 +297,10 @@ prometheus:
     - trino
 ```
 
-```bash
-# Add to docker-compose.phase3.yml services section
-# Then create prometheus.yml with MinIO/Trino metrics endpoints
-```
-
 Set up alerts for:
 - MinIO disk usage (>80%)
 - Trino query failures
-- Hive Metastore connection issues
+- Warehouse storage growth
 
 ### 3. **Scale Trino Cluster**
 
@@ -345,7 +327,7 @@ trino-worker-2:
   networks: [lake]
 ```
 
-Then increase query memory in `trino/etc/config.properties`:
+Increase query memory in `trino/etc/config.properties`:
 ```properties
 worker-concurrency=8
 query.max-memory-per-node=8GB
@@ -367,14 +349,14 @@ For production, implement security and reliability best practices:
 - Enable Superset OAuth (Google, GitHub, etc.)
 
 **High Availability:**
-- Run multiple MinIO instances with distrubuted mode
+- Run multiple MinIO instances with distributed mode
 - Use external database for Hive Metastore (Postgres in HA mode)
 - Configure Trino coordinator with backup
 
 **Backup Strategy:**
 ```bash
 # Backup MinIO data
-docker exec minio mc backup bucket local/iot-telemetry s3://backup-bucket/
+docker exec minio mc cp -r local/warehouse s3://backup-bucket/
 
 # Backup database
 docker exec postgres-metastore pg_dump metastore_db > backups/metastore-$(date +%Y%m%d).sql
