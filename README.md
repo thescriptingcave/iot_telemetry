@@ -98,11 +98,11 @@ SHOW TABLES FROM iceberg.curated;
 SELECT count(*) FROM iceberg.curated.temperature;
 
 -- per-minute temperature trend, last hour
-SELECT date_trunc('minute', timestamp) AS ts,
-       round(avg(value_celsius), 2) AS avg_temp_c,
-       count(*)                      AS n
+SELECT date_trunc('minute', event_ts) AS ts,
+       round(avg(temperature_c), 2) AS avg_temp_c,
+       count(*)                       AS n
 FROM iceberg.curated.temperature
-WHERE timestamp >= now() - INTERVAL '1' HOUR
+WHERE event_ts >= now() - INTERVAL '1' HOUR
 GROUP BY 1 ORDER BY 1 DESC;
 ```
 
