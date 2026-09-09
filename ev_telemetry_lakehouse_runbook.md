@@ -33,7 +33,7 @@ All come from `.env` — see `.env.example` for the template.
 | Thing | Value |
 |---|---|
 | MinIO user | `MINIO_ROOT_USER=minioadmin` |
-| MinIO password | `MINIO_ROOT_PASSWORD=change-this-password-in-production` |
+| MinIO password | `MINIO_ROOT_PASSWORD=minioadmin` |
 | Superset | `admin` / `admin` (auto-created on first boot; override via `SUPERSET_ADMIN_USERNAME` / `SUPERSET_ADMIN_PASSWORD`) |
 
 Superset metadata lives in Postgres (`superset-db`), not filesystem SQLite — wired via `superset/superset_config.py` mounted into `/app/pythonpath/`.
@@ -47,7 +47,7 @@ Superset metadata lives in Postgres (`superset-db`), not filesystem SQLite — w
 `mc` is not installed on the host; use the copy inside the MinIO container.
 
 ```bash
-docker exec minio mc alias set local http://localhost:9000 minioadmin "change-this-password-in-production"
+docker exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
 ```
 
 Inspect storage:
