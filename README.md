@@ -50,9 +50,7 @@ uv pip install --python .venv/bin/python minio fastavro pyarrow trino python-dot
 
 ```bash
 cd ev_dbt
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+pip install dbt-core dbt-trino
 dbt debug
 ```
 
