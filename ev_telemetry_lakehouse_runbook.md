@@ -34,7 +34,9 @@ All come from `.env` — see `.env.example` for the template.
 |---|---|
 | MinIO user | `MINIO_ROOT_USER=minioadmin` |
 | MinIO password | `MINIO_ROOT_PASSWORD=change-this-password-in-production` |
-| Superset | `admin` / `admin` |
+| Superset | `admin` / `admin` (auto-created on first boot; override via `SUPERSET_ADMIN_USERNAME` / `SUPERSET_ADMIN_PASSWORD`) |
+
+Superset metadata lives in Postgres (`superset-db`), not filesystem SQLite — wired via `superset/superset_config.py` mounted into `/app/pythonpath/`.
 
 > **⚠️ Catalog is in-memory:** the REST catalog's SQLite DB is `mode=memory`, so **restarting** `iceberg-rest` (or `docker compose down`) wipes table registration even though the Iceberg metadata/files remain in S3. After any restart, `SHOW TABLES FROM iceberg.curated` may be empty — follow the **Reset / recreate** procedure in Section 5 (drop schema + rerun generator). If you rotate MinIO creds, they must also match in `iceberg-rest` env and `trino/etc/catalog/*.properties` (these are currently hardcoded).
 
