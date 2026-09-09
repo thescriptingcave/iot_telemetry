@@ -20,7 +20,7 @@ Generator ──▶ MinIO (S3) ──raw──▶ s3://iot-telemetry/ev_v1/{stre
 ## Core Components
 
 - **MinIO**: object storage (raw Parquet files + Iceberg warehouse). Ports 9000/9001.
-- **iceberg-rest**: REST catalog (port 8181) with warehouse `s3://warehouse/`, backed by an embedded SQLite DB.
+- **iceberg-rest**: REST catalog (port 8181) with warehouse `s3://warehouse/`, backed by an **in-memory SQLite DB** (see note below).
 - **Trino**: query engine (port 8080), catalogs: `iceberg`, `hive` (legacy), `system`.
 - **PyIceberg sink**: inside the generator, appends rows to `iceberg.curated.<stream>` tables partitioned by `day(timestamp)`.
 - **dbt**: transformations in `ev_dbt/`.
@@ -36,7 +36,7 @@ All come from `.env` — see `.env.example` for the template.
 | MinIO password | `MINIO_ROOT_PASSWORD=change-this-password-in-production` |
 | Superset | `admin` / `admin` |
 
-If you rotate MinIO creds, they must match in `.env`, `docker-compose.phase3.yml`, and the Iceberg REST / Trino catalog configs.
+> **⚠️ Catalog is in-memory:** the REST catalog's SQLite DB is `mode=memory`, so **restarting** `iceberg-rest` (or `docker compose down`) wipes table registration even though the Iceberg metadata/files remain in S3. After any restart, `SHOW TABLES FROM iceberg.curated` may be empty — follow the **Reset / recreate** procedure in Section 5 (drop schema + rerun generator). If you rotate MinIO creds, they must also match in `iceberg-rest` env and `trino/etc/catalog/*.properties` (these are currently hardcoded).
 
 ---
 
@@ -59,7 +59,7 @@ docker exec minio mc ls -r local/warehouse/curated/temperature/ | head
 
 Layout:
 
-- Raw: `s3://iot-telemetry/ev_v1/{stream}/{year=...}/{month=...}/...parquet`
+- Raw: `s3://iot-telemetry/ev_v1/{stream}/{year=...}/{month=...}/{day=...}/{hour=...}/...parquet`
 - Iceberg tables: `s3://warehouse/curated/{stream}/{data|metadata}/...`
 - Iceberg data files are physically partitioned `timestamp_day=YYYY-MM-DD`.
 
@@ -162,6 +162,7 @@ Behaviors:
 | `MAX_RECORDS` | `0` | stop when total across all streams reaches this (`0` = unlimited) |
 | `MAX_RECORDS_PER_TYPE` | `0` | stop when each stream reaches this |
 | `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` | via `.env` | MinIO creds (fallback `minioadmin`) |
+| `MINIO_ENDPOINT` / `MINIO_BUCKET` | `localhost:9000` / `iot-telemetry` | MinIO target for the sink |
 
 Small test run (stops itself, ~10s):
 
@@ -322,12 +323,14 @@ docker exec trino trino --execute "SELECT count(*) FROM iceberg.curated.temperat
 
 ## Iceberg tables missing / `SHOW TABLES` empty
 
-Sink didn't create them yet — either the generator hasn't run, or sink init failed:
+Sink didn't create them yet — either the generator hasn't run, sink init failed, or the catalog was restarted (in-memory DB reset):
 
 ```bash
-docker logs trino | tail               # look for "Iceberg curated sink connected"
-curl http://localhost:8181/            # REST catalog reachable?
-docker compose -f docker-compose.phase3.yml logs iceberg-rest
+# the sink confirms itself in the GENERATOR's terminal, not Trino logs
+# (run the generator and look for "Iceberg curated sink connected")
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8181/v1/config   # 200 = catalog alive
+docker compose -f docker-compose.phase3.yml logs iceberg-rest | tail
+# if the catalog was restarted, re-register the tables (Section 5 reset) and rerun the generator
 ```
 
 ## `NotInstalledError: pyiceberg_core needs to be installed`
@@ -338,7 +341,9 @@ uv pip install --python .venv/bin/python "pyiceberg[pyiceberg-core]"
 
 ## `SignatureDoesNotMatch` or access-denied writing to MinIO
 
-Credentials mismatch. `.env` must set `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` to the same values MinIO runs with; same values must be in `flyway`/catalog configs for iceberg-rest and Trino (`trino/etc/catalog/iceberg.properties`, `trino/etc/catalog/hive.properties`).
+Credentials mismatch. `.env` must set `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` to the same values MinIO runs with. These files also carry hardcoded copies — keep them in sync when rotating creds:
+- `iceberg-rest` env in `docker-compose.phase3.yml` (`CATALOG_S3_ACCESS__KEY__ID` / `CATALOG_S3_SECRET__ACCESS__KEY`)
+- `trino/etc/catalog/iceberg.properties` and `trino/etc/catalog/hive.properties` (`s3.aws-access-key` / `s3.aws-secret-key`)
 
 ## Existing curated table has an old/incorrect schema
 
