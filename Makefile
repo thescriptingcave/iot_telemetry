@@ -1,7 +1,7 @@
 # EV Telemetry Lakehouse - Makefile
 # Useful commands for managing the lakehouse platform
 
-.PHONY: up down restart status logs clean prune help
+.PHONY: up down restart status logs clean prune help trino superset minio check reset build rebuild data dbt setup
 
 # Start all services
 up:
