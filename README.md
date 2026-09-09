@@ -48,8 +48,22 @@ uv pip install --python .venv/bin/python minio fastavro pyarrow trino python-dot
 
 ### dbt setup (optional)
 
+Note: Use Python 3.13 for dbt (Python 3.14 has compatibility issues with protobuf):
+
 ```bash
 cd ev_dbt
+python3.13 -m venv .venv
+source .venv/bin/activate
+pip install dbt-core dbt-trino
+dbt debug
+```
+
+Or if you only have Python 3.13 available:
+
+```bash
+cd ev_dbt
+python3 -m venv .venv
+source .venv/bin/activate
 pip install dbt-core dbt-trino
 dbt debug
 ```
