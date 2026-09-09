@@ -52,17 +52,7 @@ Note: Use Python 3.13 for dbt (Python 3.14 has compatibility issues with protobu
 
 ```bash
 cd ev_dbt
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install dbt-core dbt-trino
-dbt debug
-```
-
-Or if you only have Python 3.13 available:
-
-```bash
-cd ev_dbt
-python3 -m venv .venv
+uv venv --python 3.13
 source .venv/bin/activate
 pip install dbt-core dbt-trino
 dbt debug
