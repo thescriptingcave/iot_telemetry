@@ -158,6 +158,35 @@ services:
       "
     restart: unless-stopped
 
+  # -----------------------
+  # Superset async worker
+  # -----------------------
+  superset-worker:
+    build:
+      context: .
+      dockerfile: superset/Dockerfile
+    container_name: superset-worker
+    depends_on:
+      superset-db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      SUPERSET_SECRET_KEY: ${SUPERSET_SECRET_KEY:-change-me-in-real-life}
+      SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://superset:${POSTGRES_SUPERSET_PASSWORD:-superset}@superset-db:5432/superset
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+    networks: [lake]
+    command: /bin/sh -c "celery --app=superset.tasks.celery_app:app worker --pool=prefork -O fair -c 4"
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
 networks:
   lake:
 
