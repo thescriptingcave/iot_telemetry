@@ -46,6 +46,16 @@ uv pip install --python .venv/bin/python minio fastavro pyarrow trino python-dot
 
 > `pyiceberg-core` is required — the `day(timestamp)` partition transform is Rust-based (missing it → `NotInstalledError`).
 
+### dbt setup (optional)
+
+```bash
+cd ev_dbt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+dbt debug
+```
+
 ### Step 2: Start services
 
 ```bash
