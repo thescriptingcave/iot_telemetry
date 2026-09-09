@@ -2,8 +2,6 @@
 
 {{ config(
     materialized='table',
-    partition_by='day',
-    partition_by_field='day',
     cluster_by=['device_id']
 ) }}
 
@@ -15,31 +13,24 @@ with source as (
 staged as (
     select
         -- Timestamp
-        cast(event_ts as timestamp) as event_ts,
-        
+        cast(timestamp as timestamp) as timestamp,
+
         -- Device info
         cast(device_id as varchar) as device_id,
-        
-        -- Temperature readings
-        cast(temperature_c as double) as temperature_c,
-        
-        -- Environmental readings
-        cast(humidity as double) as humidity,
-        
-        -- Device status
-        cast(battery_level as double) as battery_level,
-        cast(signal_strength as double) as signal_strength,
-        cast(firmware_version as varchar) as firmware_version,
-        
-        -- Partition columns
-        cast(date(event_ts) as date) as day,
-        cast(extract(hour from event_ts) as integer) as hour
+
+        -- Temperature reading
+        cast(value_celsius as double) as value_celsius,
+        cast(unit as varchar) as unit,
+        cast(accuracy_pct as double) as accuracy_pct,
+
+        -- Status
+        cast(status as varchar) as status
 
     from source
-    
-    where temperature_c is not null
+
+    where value_celsius is not null
 )
 
 select *
 from staged
-where temperature_c >= -40 and temperature_c <= 85
+where value_celsius >= -40 and value_celsius <= 125

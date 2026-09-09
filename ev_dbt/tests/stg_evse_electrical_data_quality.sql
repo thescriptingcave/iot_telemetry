@@ -11,4 +11,5 @@ where
     power_kw < 0 or power_kw > 500
     or voltage_v < 0 or voltage_v > 1000
     or current_a < 0 or current_a > 500
-    or state_of_charge < 0 or state_of_charge > 100
+    or power_factor is not null and (power_factor < 0.5 or power_factor > 1)
+    or temperature_cabinet_c is not null and (temperature_cabinet_c < -40 or temperature_cabinet_c > 150)

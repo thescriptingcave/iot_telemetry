@@ -2,8 +2,6 @@
 
 {{ config(
     materialized='table',
-    partition_by='day',
-    partition_by_field='day',
     cluster_by=['device_id']
 ) }}
 
@@ -15,25 +13,26 @@ with source as (
 staged as (
     select
         -- Timestamp
-        cast(event_ts as timestamp) as event_ts,
-        
-        -- Device info
+        cast(timestamp as timestamp) as timestamp,
+
+        -- Site / asset info
+        cast(site_id as varchar) as site_id,
+        cast(asset_id as varchar) as asset_id,
+        cast(connector_id as bigint) as connector_id,
         cast(device_id as varchar) as device_id,
-        cast(charger_id as varchar) as charger_id,
-        cast(connector_id as varchar) as connector_id,
-        
+
         -- Event info
-        cast(event_type as varchar) as event_type,
         cast(session_id as varchar) as session_id,
-        
+        cast(event_type as varchar) as event_type,
+        cast(reason_code as varchar) as reason_code,
+        cast(severity as varchar) as severity,
+
         -- Energy metrics
-        cast(energy_kwh as double) as energy_kwh,
-        cast(duration_minutes as double) as duration_minutes,
-        cast(power_kw as double) as power_kw,
-        
-        -- Partition columns
-        cast(date(event_ts) as date) as day,
-        cast(extract(hour from event_ts) as integer) as hour
+        cast(meter_start_kwh as double) as meter_start_kwh,
+        cast(meter_end_kwh as double) as meter_end_kwh,
+        cast(energy_delivered_kwh as double) as energy_delivered_kwh,
+        cast(duration_s as bigint) as duration_s,
+        cast(user_id_hash as varchar) as user_id_hash
 
     from source
 )

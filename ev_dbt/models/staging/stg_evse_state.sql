@@ -2,8 +2,6 @@
 
 {{ config(
     materialized='table',
-    partition_by='day',
-    partition_by_field='day',
     cluster_by=['device_id']
 ) }}
 
@@ -15,21 +13,23 @@ with source as (
 staged as (
     select
         -- Timestamp
-        cast(event_ts as timestamp) as event_ts,
-        
-        -- Device info
+        cast(timestamp as timestamp) as timestamp,
+
+        -- Site / asset info
+        cast(site_id as varchar) as site_id,
+        cast(asset_id as varchar) as asset_id,
+        cast(connector_id as bigint) as connector_id,
         cast(device_id as varchar) as device_id,
-        cast(charger_id as varchar) as charger_id,
-        cast(connector_id as varchar) as connector_id,
-        
+
         -- State info
         cast(state as varchar) as state,
-        cast(status as varchar) as status,
-        cast(session_id as varchar) as session_id,
-        
-        -- Partition columns
-        cast(date(event_ts) as date) as day,
-        cast(extract(hour from event_ts) as integer) as hour
+        cast(available as boolean) as available,
+        cast(fault_active as boolean) as fault_active,
+        cast(fault_code as varchar) as fault_code,
+        cast(derate_pct as double) as derate_pct,
+        cast(charger_temp_c as double) as charger_temp_c,
+        cast(uptime_s as bigint) as uptime_s,
+        cast(firmware_version as varchar) as firmware_version
 
     from source
 )

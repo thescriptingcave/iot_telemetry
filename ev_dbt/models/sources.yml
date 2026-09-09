@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: raw
     database: iceberg
-    schema: ev_v1
+    schema: curated
     tables:
       - name: temperature
       - name: humidity

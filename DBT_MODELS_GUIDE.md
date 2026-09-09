@@ -24,13 +24,13 @@ ev_dbt/models/
 
 ### 1. Sources (`sources.yml`)
 
-Defines where raw data comes from (Parquet files in MinIO):
+Defines where raw data comes from (Iceberg curated tables):
 
 ```yaml
 sources:
   - name: raw
     database: iceberg
-    schema: ev_v1
+    schema: curated
     tables:
       - name: temperature
       - name: humidity
@@ -39,38 +39,36 @@ sources:
 
 ### 2. Staging Models (`stg_*.sql`)
 
-Clean and standardize raw data:
+Clean and standardize source data:
 
 **stg_temperature.sql**:
-- Casts data types
-- Normalizes column names
-- Adds `day` and `hour` partition columns
-- Filters invalid temperature values (-40°C to 85°C)
+- Casts data types from the Iceberg `curated` tables
+- Uses `timestamp` (the row timestamp; partitioned by `day(timestamp)`)
+- Filters invalid temperature values (-40°C to 125°C)
 
 **stg_evse_electrical.sql**:
-- Standardizes charger IDs
-- Converts power units (kW)
-- Validates voltage/current ranges
+- Normalizes site/asset/connector/device IDs
+- Validates power/voltage/current and power factor ranges
 
 ### 3. Mart Models (`mart_*.sql`)
 
 Aggregated business tables for analytics:
 
 **mart_evse_power_daily.sql**:
-- Aggregates hourly EV charging data to daily
-- Calculates: avg power, total energy, max/min power
-- Groups by day, device_id, charger_id
-- Excludes fault periods
+- Aggregates EV charging data to daily buckets via `day(timestamp)`
+- Calculates: avg power, total energy, max/min power, power factor, thermal/derate stats
+- Groups by day, device_id, asset_id
+- Excludes idle periods (`power_kw > 0`)
 
 ## Sample Queries
 
 ### Query Daily EV Power Statistics
 ```sql
 SELECT 
-  day,
+  cast(timestamp as date) as day,
   device_id,
   AVG(power_kw) as avg_power,
-  SUM(energy_kwh_total) as total_energy,
+  SUM(power_kw) as total_energy,
   MAX(power_kw) as max_power
 FROM ev_dbt.mart_evse_power_daily
 WHERE day >= current_date - interval '7' day
@@ -81,10 +79,10 @@ ORDER BY day DESC, total_energy DESC;
 ### Query Temperature Trends
 ```sql
 SELECT 
-  day,
-  AVG(temperature_c) as avg_temp,
-  MIN(temperature_c) as min_temp,
-  MAX(temperature_c) as max_temp
+  cast(timestamp as date) as day,
+  AVG(value_celsius) as avg_temp,
+  MIN(value_celsius) as min_temp,
+  MAX(value_celsius) as max_temp
 FROM ev_dbt.stg_temperature
 WHERE device_id = 'sensor-01'
 GROUP BY day

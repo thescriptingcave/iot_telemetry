@@ -293,13 +293,16 @@ Schedule OPTIMIZE in off-peak hours (small test runs create many tiny files — 
 
 ```bash
 source .venv/bin/activate
-cd ev_dbt
-dbt debug                # verify Trino connection (profiles.yml not committed — create it: trino://<user>@localhost:8080/iceberg, schema=curated)
+dbt debug                # verify Trino connection
 dbt compile
 dbt run -s stg_temperature
 dbt test
 dbt docs serve --port 8088
 ```
+
+> **`profiles.yml`** (`~/.dbt/profiles.yml`, not committed): `type: trino`, `method: none`, `host: localhost`, `port: 8080`, `user: admin`, `database: iceberg`, `schema: curated`. **Set `threads: 1`** — the Iceberg REST catalog is backed by a single SQLite file; parallel dbt threads cause `SQLITE_BUSY` commit failures (`ICEBERG_COMMIT_ERROR ... Service failed: 500`). If you hit this anyway, `docker compose -f docker-compose.phase3.yml restart iceberg-rest` clears stale catalog locks (table metadata persists in the volume).
+>
+> **Sources live in `ev_dbt/models/sources.yml`** — dbt only scans YAML under configured paths (`model-paths`), so a `sources.yml` at the project root is silently ignored (`Compilation Error: depends on a source named ... which was not found`).
 
 ---
 

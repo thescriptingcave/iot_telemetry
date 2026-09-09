@@ -2,8 +2,6 @@
 
 {{ config(
     materialized='table',
-    partition_by='day',
-    partition_by_field='day',
     cluster_by=['device_id']
 ) }}
 
@@ -15,27 +13,21 @@ with source as (
 staged as (
     select
         -- Timestamp
-        cast(event_ts as timestamp) as event_ts,
-        
+        cast(timestamp as timestamp) as timestamp,
+
         -- Device info
         cast(device_id as varchar) as device_id,
-        
+
         -- Environmental readings
-        cast(humidity as double) as humidity,
-        cast(temperature_c as double) as temperature_c,
-        
-        -- Device status
-        cast(battery_level as double) as battery_level,
-        
-        -- Partition columns
-        cast(date(event_ts) as date) as day,
-        cast(extract(hour from event_ts) as integer) as hour
+        cast(relative_humidity_pct as double) as relative_humidity_pct,
+        cast(dew_point_c as double) as dew_point_c,
+        cast(location as varchar) as location
 
     from source
-    
-    where humidity is not null
+
+    where relative_humidity_pct is not null
 )
 
 select *
 from staged
-where humidity >= 0 and humidity <= 100
+where relative_humidity_pct >= 0 and relative_humidity_pct <= 100
