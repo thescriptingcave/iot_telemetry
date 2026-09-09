@@ -40,3 +40,4 @@ logs/
 ev_dbt/target/
 ev_dbt/dbt_packages/
 *.dbt_modules/
+ev_dbt/.user.yml
