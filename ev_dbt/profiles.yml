@@ -3,7 +3,6 @@ ev_dbt:
   outputs:
     dev:
       type: trino
-      method: password
       host: localhost
       port: 8080
       user: admin
