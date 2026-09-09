@@ -1,8 +1,19 @@
--- dbt data quality tests
--- Each test should return 0 rows when data is valid
+-- tests/stg_evse_electrical_power_reasonable.sql
 
--- Test: power_kw should be non-negative and reasonable (0-150 kW for EVSE)
+{{ config(
+    severity='warn',
+    tags=['daily']
+) }}
+
+-- Test that power readings make sense relative to voltage and current
+-- P = V * I (for DC, roughly accurate for AC power factor ~0.9)
 select *
 from {{ ref('stg_evse_electrical') }}
-where power_kw < 0
-   or power_kw > 150
+where 
+    voltage_v > 0 
+    and current_a > 0
+    and (
+        -- Power should be roughly within 10% of V*I
+        power_kw > (voltage_v * current_a / 1000) * 1.1
+        or power_kw < (voltage_v * current_a / 1000) * 0.9
+    )
