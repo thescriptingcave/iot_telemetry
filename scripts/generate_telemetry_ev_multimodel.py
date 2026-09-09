@@ -89,7 +89,7 @@ import random
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -109,6 +109,24 @@ try:
 except ImportError:
     PYARROW_AVAILABLE = False
     print("WARNING: pyarrow not installed. Install with: pip install pyarrow")
+
+try:
+    from pyiceberg.catalog.rest import RestCatalog
+    from pyiceberg.schema import Schema
+    from pyiceberg.types import (
+        BooleanType,
+        DoubleType,
+        LongType,
+        NestedField,
+        StringType,
+        TimestampType,
+    )
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import DayTransform
+    PYICEBERG_AVAILABLE = True
+except ImportError:
+    PYICEBERG_AVAILABLE = False
+    print("WARNING: pyiceberg not installed. Install with: pip install 'pyiceberg[pyiceberg-core]'")
 
 
 def env_bool(name: str, default: bool) -> bool:
@@ -202,6 +220,89 @@ SCHEMAS: Dict[str, Dict[str, Any]] = {
 CONTINUOUS_STREAMS = ["temperature", "humidity", "vibration", "evse_electrical", "evse_state"]
 EVENT_STREAMS = ["evse_session_event"]
 SENSOR_TYPES = CONTINUOUS_STREAMS + EVENT_STREAMS
+
+# ---------------- Iceberg curated sink (Option A: direct PyIceberg writes) ----------------
+ICEBERG_SINK_ENABLED = env_bool("ICEBERG_SINK_ENABLED", True)
+ICEBERG_REST_URI = env_str("ICEBERG_REST_URI", "http://localhost:8181")
+ICEBERG_WAREHOUSE = env_str("ICEBERG_WAREHOUSE", "s3://warehouse/")
+ICEBERG_NAMESPACE = env_str("ICEBERG_NAMESPACE", "curated")
+
+# Curated column layouts — one entry per sensor_type, in record order.
+# `timestamp` (epoch milliseconds) is stored as a real timestamp and
+# partitioned by day for cheap time-series pruning in Trino.
+ICEBERG_COLUMNS: Dict[str, List[Any]] = {
+    "temperature": [
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("value_celsius", DoubleType()),
+        ("unit", StringType()),
+        ("accuracy_pct", DoubleType()),
+        ("status", StringType()),
+    ],
+    "humidity": [
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("relative_humidity_pct", DoubleType()),
+        ("dew_point_c", DoubleType()),
+        ("location", StringType()),
+    ],
+    "vibration": [
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("rms_acceleration", DoubleType()),
+        ("peak_frequency_hz", DoubleType()),
+        ("bandwidth_hz", DoubleType()),
+        ("sensor_model", StringType()),
+    ],
+    "evse_electrical": [
+        ("site_id", StringType()),
+        ("asset_id", StringType()),
+        ("connector_id", LongType()),
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("voltage_v", DoubleType()),
+        ("current_a", DoubleType()),
+        ("power_kw", DoubleType()),
+        ("energy_kwh_total", DoubleType()),
+        ("power_factor", DoubleType()),
+        ("grid_frequency_hz", DoubleType()),
+        ("phase", StringType()),
+        ("temperature_cabinet_c", DoubleType()),
+        ("derate_pct", DoubleType()),
+        ("status", StringType()),
+    ],
+    "evse_state": [
+        ("site_id", StringType()),
+        ("asset_id", StringType()),
+        ("connector_id", LongType()),
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("state", StringType()),
+        ("available", BooleanType()),
+        ("fault_active", BooleanType()),
+        ("fault_code", StringType()),
+        ("derate_pct", DoubleType()),
+        ("charger_temp_c", DoubleType()),
+        ("uptime_s", LongType()),
+        ("firmware_version", StringType()),
+    ],
+    "evse_session_event": [
+        ("site_id", StringType()),
+        ("asset_id", StringType()),
+        ("connector_id", LongType()),
+        ("device_id", StringType()),
+        ("timestamp", TimestampType()),
+        ("session_id", StringType()),
+        ("event_type", StringType()),
+        ("reason_code", StringType()),
+        ("severity", StringType()),
+        ("meter_start_kwh", DoubleType()),
+        ("meter_end_kwh", DoubleType()),
+        ("energy_delivered_kwh", DoubleType()),
+        ("duration_s", LongType()),
+        ("user_id_hash", StringType()),
+    ],
+}
 
 
 def now_ms(ts: datetime) -> int:
@@ -607,6 +708,95 @@ def should_stop(total_count: int, per_type_counts: Dict[str, int]) -> bool:
     return False
 
 
+def build_curated_schema(sensor_type: str) -> Schema:
+    return Schema(
+        *(NestedField(id=idx + 1, name=name, type=typ) for idx, (name, typ) in enumerate(ICEBERG_COLUMNS[sensor_type]))
+    )
+
+
+def build_curated_partition_spec(schema: Schema) -> PartitionSpec:
+    ts_field = next(f for f in schema.fields if f.name == "timestamp")
+    return PartitionSpec(
+        PartitionField(source_id=ts_field.field_id, field_id=1000, transform=DayTransform(), name="timestamp_day")
+    )
+
+
+def arrow_timestamp_array(ms_values: List[Optional[int]]) -> pa.Array:
+    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
+    datetimes = []
+    for v in ms_values:
+        if v is None:
+            datetimes.append(None)
+        else:
+            datetimes.append((epoch + timedelta(milliseconds=v)).replace(tzinfo=None))
+    return pa.array(datetimes, type=pa.timestamp("us"))
+
+
+def build_arrow_table(sensor_type: str, records: List[Dict[str, Any]]) -> pa.Table:
+    schema = build_curated_schema(sensor_type)
+    arrays: List[pa.Array] = []
+    names: List[str] = []
+    for field in schema.fields:
+        values = [r.get(field.name) for r in records]
+        names.append(field.name)
+        if isinstance(field.field_type, TimestampType):
+            arrays.append(arrow_timestamp_array(values))
+        elif isinstance(field.field_type, LongType):
+            arrays.append(pa.array(values, type=pa.int64()))
+        elif isinstance(field.field_type, DoubleType):
+            arrays.append(pa.array(values, type=pa.float64()))
+        elif isinstance(field.field_type, BooleanType):
+            arrays.append(pa.array(values, type=pa.bool_()))
+        else:
+            arrays.append(pa.array(values, type=pa.string()))
+    return pa.Table.from_arrays(arrays, names=names)
+
+
+class IcebergSink:
+    """Appends generated batches straight into Iceberg (REST catalog).
+
+    Each stream maps 1:1 to an `iceberg.<namespace>.<sensor_type>` table
+    partitioned by day(timestamp), so time-series queries in Trino prune cheaply.
+    """
+
+    def __init__(self) -> None:
+        endpoint = MINIO_ENDPOINT
+        if "://" not in endpoint:
+            endpoint = f"http{'s' if MINIO_SECURE else ''}://{endpoint}"
+        properties = {
+            "s3.endpoint": endpoint,
+            "s3.access-key-id": MINIO_ACCESS_KEY,
+            "s3.secret-access-key": MINIO_SECRET_KEY,
+            "s3.path-style-access": "true",
+            "s3.region": "us-east-1",
+        }
+        self.catalog = RestCatalog(
+            "default",
+            uri=ICEBERG_REST_URI,
+            warehouse=ICEBERG_WAREHOUSE,
+            **properties,
+        )
+        self.catalog.create_namespace_if_not_exists(ICEBERG_NAMESPACE)
+        self._ensure_tables()
+
+    def _ensure_tables(self) -> None:
+        for sensor_type in SENSOR_TYPES:
+            identifier = (ICEBERG_NAMESPACE, sensor_type)
+            if not self.catalog.table_exists(identifier):
+                schema = build_curated_schema(sensor_type)
+                spec = build_curated_partition_spec(schema)
+                self.catalog.create_table(identifier, schema, partition_spec=spec)
+                print(f"✅ Created Iceberg table {ICEBERG_NAMESPACE}.{sensor_type}")
+
+    def append(self, sensor_type: str, records: List[Dict[str, Any]]) -> int:
+        if not records:
+            return 0
+        table = self.catalog.load_table((ICEBERG_NAMESPACE, sensor_type))
+        arrow = build_arrow_table(sensor_type, records)
+        table.append(arrow)
+        return arrow.num_rows
+
+
 def main() -> None:
     if not SCHEMAS_DIR.exists():
         raise FileNotFoundError(f"Schema directory not found: {SCHEMAS_DIR}")
@@ -623,6 +813,18 @@ def main() -> None:
         secure=MINIO_SECURE,
     )
     ensure_bucket(client, MINIO_BUCKET)
+
+    iceberg_sink: Optional[IcebergSink] = None
+    if not ICEBERG_SINK_ENABLED:
+        print("ℹ️ Iceberg curated sink disabled (ICEBERG_SINK_ENABLED=false)")
+    elif not PYICEBERG_AVAILABLE:
+        print("⚠️ pyiceberg not installed; Iceberg curated sink disabled")
+    else:
+        try:
+            iceberg_sink = IcebergSink()
+            print(f"✅ Iceberg curated sink connected: REST={ICEBERG_REST_URI} namespace={ICEBERG_NAMESPACE}")
+        except Exception as e:
+            print(f"⚠️ Iceberg sink failed to initialize ({e}); continuing with MinIO raw writes only")
 
     world = build_world()
 
@@ -757,6 +959,12 @@ def main() -> None:
                 object_key = f"{prefix}/{filename}"
                 client.fput_object(MINIO_BUCKET, object_key, str(local_path))
 
+                if iceberg_sink is not None:
+                    try:
+                        iceberg_sink.append(sensor_type, records)
+                    except Exception as e:
+                        print(f"⚠️ Iceberg append failed for {sensor_type}: {e}")
+
                 per_type_counts[sensor_type] += count
                 total_count += count
                 flushed_counts[sensor_type] = count
@@ -782,6 +990,13 @@ def main() -> None:
                 count = write_parquet_zstd(records, local_path)
                 object_key = f"{prefix}/{filename}"
                 client.fput_object(MINIO_BUCKET, object_key, str(local_path))
+
+                if iceberg_sink is not None:
+                    try:
+                        iceberg_sink.append(sensor_type, records)
+                    except Exception as e:
+                        print(f"⚠️ Iceberg append failed for {sensor_type}: {e}")
+
                 per_type_counts[sensor_type] += count
                 total_count += count
                 buffers[sensor_type] = []

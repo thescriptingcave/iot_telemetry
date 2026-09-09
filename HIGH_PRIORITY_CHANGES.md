@@ -97,16 +97,18 @@ MinIO now uses erasure coding by default in production (configured in deployment
 ```sql
 -- Daily file compaction (run during off-peak hours)
 ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE
-WHERE event_ts > now() - INTERVAL '7' DAY;
+WHERE timestamp > now() - INTERVAL '7' DAY;
 
 -- File size targeting
 ALTER TABLE iceberg.curated.evse_electrical EXECUTE OPTIMIZE
-WHERE event_ts > now() - INTERVAL '1' DAY;
+WHERE timestamp > now() - INTERVAL '1' DAY;
 
 -- Fragmentation cleanup
 ALTER TABLE iceberg.curated.evse_state EXECUTE OPTIMIZE
-WHERE event_ts > now() - INTERVAL '3' DAY;
+WHERE timestamp > now() - INTERVAL '3' DAY;
 ```
+
+> Predicates use `timestamp` (the partition column / row timestamp), not the old `event_ts` column removed in the Option A schema refresh.
 
 ### Benefits:
 - **Reduced file count** (1000s → 100s)
@@ -114,19 +116,34 @@ WHERE event_ts > now() - INTERVAL '3' DAY;
 - **Faster queries** with fewer metadata lookups
 - **Better statistics** for query optimization
 
+## 7. ✅ Direct-to-Iceberg Sink (Option A — replaces Hive raw)
+
+### Changes:
+- **File:** `scripts/generate_telemetry_ev_multimodel.py`
+- **Removed from pipeline:** Hive metastore / `hive.raw` external tables and the `raw → Iceberg` CTAS step.
+
+### What was done:
+- Added a PyIceberg (`IcebergSink`) that appends each flushed batch directly to `iceberg.curated.<stream>` tables via the REST catalog (`http://localhost:8181`, warehouse `s3://warehouse/`).
+- Curated tables are auto-created on first run with a schema that mirrors the generated records, **partitioned by `day(timestamp)`** (`timestamp_day=YYYY-MM-DD`).
+- Legacy curated tables (old `event_ts/day/hour` schema) were dropped; `scripts/setup_iceberg.sh` now only recreates the namespace.
+- Added `pyiceberg[pyiceberg-core]` dependency (Rust transform for `day()`), gated imports, env-driven config, and graceful MinIO-only fallback.
+
+### New env vars:
+`ICEBERG_SINK_ENABLED`, `ICEBERG_REST_URI`, `ICEBERG_WAREHOUSE`, `ICEBERG_NAMESPACE`.
+
 ---
 
 ## Quick Start
 
-### 1. Run Scripts with Parquet Output
+### 1. Run Scripts with Parquet Output + Iceberg Sink
 ```bash
-python scripts/generate_telemetry_ev_multimodel.py
-python scripts/generate_telemetry.py
+.venv/bin/python scripts/generate_telemetry_ev_multimodel.py
+.venv/bin/python scripts/generate_telemetry.py
 ```
 
 ### 2. Convert Existing Avro to Parquet
 ```bash
-python scripts/convert_avro_to_parquet.py \
+.venv/bin/python scripts/convert_avro_to_parquet.py \
   ./data/avro_incoming \
   ./data/parquet_converted
 ```
@@ -137,13 +154,18 @@ python scripts/convert_avro_to_parquet.py \
 openssl rand -base64 32 > .env
 
 # Start services
-docker compose up -d
+docker compose -f docker-compose.phase3.yml up -d
 ```
 
 ### 4. Run Iceberg Optimization
 ```bash
 # Run daily
 docker exec trino trino -e "ALTER TABLE iceberg.curated.temperature EXECUTE OPTIMIZE;"
+```
+
+### 5. Install Python deps (incl. Rust-based Iceberg transform)
+```bash
+uv pip install --python .venv/bin/python minio fastavro pyarrow trino python-dotenv "pyiceberg[pyiceberg-core]"
 ```
 
 ---
@@ -162,9 +184,9 @@ docker exec trino trino -e "ALTER TABLE iceberg.curated.temperature EXECUTE OPTI
 
 ---
 
-## Files Modified
+## Files Modified (incl. Option A)
 
-1. `scripts/generate_telemetry_ev_multimodel.py`
+1. `scripts/generate_telemetry_ev_multimodel.py` (Iceberg sink added)
 2. `scripts/generate_telemetry.py`
 3. `scripts/generate_telemetry_multimodal.py`
 4. `scripts/generate_telemetry_ev_multimodel_with_metadata.py`
@@ -179,13 +201,13 @@ docker exec trino trino -e "ALTER TABLE iceberg.curated.temperature EXECUTE OPTI
 13. `ev_telemetry_lakehouse_runbook.md` (UPDATED)
 14. `.env` (NEW)
 15. `.env.example` (NEW)
+16. `scripts/setup_iceberg.sh` (UPDATED — namespace only; tables auto-created by generator)
 
 ---
 
 ## Next Steps
 
-1. Install pyarrow: `pip install pyarrow`
-2. Run data conversion script on existing Avro files
-3. Generate new passwords with: `openssl rand -base64 32`
-4. Test the optimized pipeline
-5. Schedule Iceberg OPTIMIZE jobs for daily maintenance
+1. Run the generator and let it create the curated tables: `.venv/bin/python scripts/generate_telemetry_ev_multimodel.py`
+2. Verify counts: `docker exec trino trino --execute "SELECT count(*) FROM iceberg.curated.temperature;"`
+3. Schedule Iceberg OPTIMIZE jobs for daily maintenance
+4. Run dbt models against `iceberg.curated`

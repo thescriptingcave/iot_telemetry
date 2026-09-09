@@ -110,7 +110,37 @@ All 8 services are running and healthy:
 - ✅ Documentation complete
 
 ### Next Steps:
-1. Load Parquet data into Iceberg tables
+1. Load Parquet data into Iceberg tables ✅ (Option A direct PyIceberg sink — completed)
 2. Run dbt transformations
 3. Set up daily OPTIMIZE jobs
 4. Configure monitoring/alerting
+
+---
+
+## 7. ✅ Iceberg Curated Layer (Option A — converted to running)
+
+**Test:** Ran the generator with the PyIceberg sink; verified curated tables created, populated, and queryable from Trino.
+
+**Changes applied:**
+- Generator (`scripts/generate_telemetry_ev_multimodel.py`) now appends each flushed batch directly into `iceberg.curated.<stream>` via the REST catalog (`http://localhost:8181`, warehouse `s3://warehouse/`).
+- Curated tables mirror the generated record schema, partitioned by `day(timestamp)`. Tables auto-created on first run.
+- Legacy wrong-schema tables (old `event_ts/day/hour`) dropped; `setup_iceberg.sh` now namespace-only.
+- Installed `pyiceberg[pyiceberg-core]` (Rust transform for `day()` partition).
+
+**Test run (config: `CHARGER_COUNT=2 CONNECTORS_PER_CHARGER=2 MAX_RECORDS=200`):**
+
+| Table | Rows | Partition range |
+|---|---|---|
+| temperature | 40 | timestamp_day=2026-09-08 |
+| humidity | 40 | timestamp_day=2026-09-08 |
+| vibration | 40 | timestamp_day=2026-09-08 |
+| evse_electrical | 40 | timestamp_day=2026-09-08 |
+| evse_state | 40 | timestamp_day=2026-09-08 |
+| evse_session_event | 3 | timestamp_day=2026-09-08 |
+
+**Verification results:**
+- ✅ All 6 curated tables auto-created by the generator
+- ✅ Row counts above visible from Trino (`SHOW TABLES` + `SELECT count(*)`)
+- ✅ Time-series query works: `SELECT date_trunc('minute', timestamp), avg(value_celsius) ... GROUP BY 1` returned rows
+- ✅ Physical layout on MinIO: `warehouse/curated/{stream}/data/timestamp_day=YYYY-MM-DD/*.parquet` + `metadata/` snapshots
+- ✅ Raw Parquet writes to `iot-telemetry/ev_v1/` unaffected (dual-write in the same flush)

@@ -32,9 +32,14 @@ services:
       minio:
         condition: service_healthy
     networks: [lake]
+    env_file:
+      - .env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-change-this-password-in-production}
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-admin} ${MINIO_ROOT_PASSWORD:-password} &&
+      mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-change-this-password-in-production} &&
       mc mb -p local/iot-telemetry || true &&
       mc mb -p local/warehouse || true &&
       mc anonymous set download local/iot-telemetry || true &&
@@ -136,13 +141,19 @@ services:
       SQLALCHEMY_DATABASE_URI: postgresql+psycopg2://superset:${POSTGRES_SUPERSET_PASSWORD:-superset}@superset-db:5432/superset
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      SUPERSET_ADMIN_USERNAME: ${SUPERSET_ADMIN_USERNAME:-admin}
+      SUPERSET_ADMIN_PASSWORD: ${SUPERSET_ADMIN_PASSWORD:-admin}
+      SUPERSET_ADMIN_EMAIL: ${SUPERSET_ADMIN_EMAIL:-admin@superset.com}
     volumes:
       - superset_home:/app/superset_home
+      - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
     networks: [lake]
     command: >
       /bin/sh -c "
       superset db upgrade &&
       superset init &&
+      ( superset fab list-users 2>/dev/null | grep -q \"username:$${SUPERSET_ADMIN_USERNAME}\" ||
+        superset fab create-admin --username \"$${SUPERSET_ADMIN_USERNAME}\" --firstname Admin --lastname Admin --email \"$${SUPERSET_ADMIN_EMAIL}\" --password \"$${SUPERSET_ADMIN_PASSWORD}\" ) &&
       gunicorn -w 2 --timeout 120 -b 0.0.0.0:8088 'superset.app:create_app()'
       "
     restart: unless-stopped
