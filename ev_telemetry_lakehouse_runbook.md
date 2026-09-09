@@ -268,6 +268,48 @@ GROUP BY 1, 2, 3 ORDER BY 1 DESC;
 
 ---
 
+# Section 6.5 — DuckDB Queries (Colab / local / zero-infra demo)
+
+DuckDB reads the raw parquet and the curated Iceberg tables directly — no Trino / Superset / server required. Great for a live-coding or notebook-style demo.
+
+## Prerequisites
+
+```bash
+brew install duckdb
+# or: pip install duckdb
+duckdb --version
+```
+
+## Run the demo script
+
+From the repo root:
+
+```bash
+duckdb < scripts/duckdb_demo.sql
+# or interactively: duckdb  then: .read scripts/duckdb_demo.sql
+```
+
+The script (uses the demo data already sitting in MinIO / `data/avro_incoming`):
+
+| Section | Reads | Notes |
+|---|---|---|
+| 1. Local raw parquet | `data/avro_incoming/ev_v1/*` | No config needed; timestamps are epoch-ms `int64` (convert with `to_timestamp(ts/1000.0)`) |
+| 2. Raw from MinIO | `s3://iot-telemetry/ev_v1/...` | Requires `httpfs`; credentials inline in the script |
+| 3. Curated Iceberg | `s3://warehouse/curated/<stream>` | Requires `iceberg` extension; native `TIMESTAMP` column; managed metadata |
+
+## Generate fresh data first (if tables are empty)
+
+The generator must have run at least once with a working Iceberg sink; see Section 4 and the "Iceberg tables missing" troubleshooting for the reset procedure.
+
+## Notes / gotchas
+
+- MinIO creds are hardcoded in the script (`minioadmin`): change them to match `.env` if rotated.
+- `s3_endpoint='localhost:9000'` assumes MinIO is on the host. If DuckDB runs inside a container, use the MinIO hostname instead.
+- `unsafe_enable_version_guessing=true` lets DuckDB find the latest Iceberg snapshot from MinIO without a version-hint file — safe for this demo dataset.
+- The raw vs curated count query highlights the same rows in two representations (lake vs catalog) — good talking point for the demo.
+
+---
+
 # Section 7 — Iceberg Maintenance
 
 ```sql
