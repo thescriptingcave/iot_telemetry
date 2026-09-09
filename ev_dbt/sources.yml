@@ -2,8 +2,8 @@ version: 2
 
 sources:
   - name: raw
-    catalog: hive
-    schema: raw
+    database: iceberg
+    schema: ev_v1
     tables:
       - name: temperature
       - name: humidity
@@ -11,5 +11,3 @@ sources:
       - name: evse_electrical
       - name: evse_state
       - name: evse_session_event
-      - name: device_metadata
-

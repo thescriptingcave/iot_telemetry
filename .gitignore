@@ -35,3 +35,8 @@ logs/
 # metastore_pg_data/
 /data/
 /data/*
+
+# dbt
+ev_dbt/target/
+ev_dbt/dbt_packages/
+*.dbt_modules/
